@@ -1,0 +1,65 @@
+\subsection{Pipeline Development and Best Practices}
+Following best practices, during the development phase of the pipeline, small random subsets of the data were used to 
+verify that every part of the pipeline was working as expected. Issues came up consistently,
+but the time to identify and fix these faults were reduced, as training times were much faster.
+Once the pipeline was established, the sizes of the training and validation sets 
+were gradually increased. With a larger amnount of data came new problems,
+such as out-of-memory errors and hallucinations, which are not exposed when testing with smaller datasets. 
+However, since the majority of the pipeline was already established, 
+the issues when training on larger datasets were less frequent. \\
+
+\subsection{Performance}
+Fine-tuning improves the forecasting performance of the model as shown in Section 2.4.5. 
+The metrics do support this, but one way to assess is to also visually inspect the results. 
+Figures \ref{fig:final_model_eval} and \ref{fig:final_model_eval_many} in the appendix show some example predictions using the trained model.
+It appears that higher frequency systems seem to perform better. This is likely
+due to the context window; higher frequency systems can fit more information about seasonaility and
+'damping' into the context window. Focusing on 2 example predictions from Figure \ref{fig:final_model_eval_many},
+Test Sample 4 and Test Sample 11 are both damped systems, meaning the amplitude of each oscillation is decreasing.
+However, since Sample 4 has a higher frequency, its predictions are, visually, more accurate. 
+Also, it appears that systems that are more consistent in amplitude are predicted more accurately, 
+as there are less 'patterns' for the model to learn in the predictions.
+Looking at the results, \textbf{larger context windows, LoRA ranks, and learning rates are recommended}.\\
+
+Gruver et al. \cite{gruver_large_2024} say that fined-tuned LLMs are zero-shot time series forecasters.
+The results in this report does support this claim, with the trained model able to make predictions on the test set
+with a relatively low error. The Volterra dataset is not used in Gruver et al.'s paper, instead they use Darts 
+\cite{herzen_darts_2022}, Monash Time Series Forecasting Archive \cite{godahewa_monash_2021} and Informer 
+\cite{zhou_informer_2021} datasets. These are much more complex than the Volterra dataset, and the results 
+show that the model is able to generalise to these datasets. However, Toner et al. argue that 'Time Series 
+Foundational Models (FMs)' fail to generate meaningful or accruate zero-shot forecastring in the context of cloud data \cite{toner_performance_2025}.
+Cloud data is inherently more complex than the Volterra dataset, with large spikes often appearing in the data, but still display the same properties found in 
+time series data such as seasonailty. Toner et al. show that FMs consistently underperform compared 
+to linear baselines (rolling window ridge regression) and naive seasonal forecasters.
+This can be explained by Gruver et al. who claim that LLMs are biased towards simple and repetive patterns. \\
+
+With the amount of time and data required to fine-tune an LLM, it begs the question: are LLM time series forecasters necessary?
+Our report shows that untrained models perform fairly poorly, even on simple datasets, and require fine-tuning to achieve 
+competitive performance. The decision comes from the trade-off between the time and data required to fine-tune an LLM compared 
+to implementing determinsitic forecasting methods. LLMs do come with the benefit of being able to accomodate missing data and
+express multimodel distributions. Also, if a pre-trained LLM is availble, then it saves the time and domain expertise required
+when crafting specific time series forecasting models. 
+
+\subsection{Future Work and Improvements}
+Working within the FLOPS budget meant that a lot of decisions were made with the computational cost in mind. 
+Looking back at the remaining budget, one change would be to use a larger context window. \\
+
+Further improvements to the training process include implementing features such as data augmentation, learning rate schedulers, and 
+more regularisation to help the model generalise better to different datasets. 
+More complex datasets such as Darts, Monash and Infromer could be used to further improve the performance of the model
+and help it generalise to more complex systems. Evaluating the trained model on the more complex datasets could 
+provide more insight into the generalisation capabilities of the model. 
+
+The model itself was treated as a black box time series forecasting tool. However, it is a large language model. 
+One capability not utilised in this study was to use prompt engineering and structured outputs to help deal with issues 
+such as hallucinations and giving the model more context about the data. This would allow the model to make more accurate predictions
+as it would better understand the task at hand \cite{chen_unleashing_2024}.
+
+
+
+
+
+
+
+
+

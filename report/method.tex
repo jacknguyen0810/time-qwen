@@ -1,0 +1,267 @@
+\subsection{Data Preparation}
+Firstly, basic data inspection was performed. 
+The data was inspected for missing values, outliers, and other anomalies. 
+The dataset was complete and did not require any cleaning. \\
+
+For preprocessing, the data followed the following steps:
+\begin{enumerate}
+    \item Imported the systems (each system being a pair of prey and predator)
+    \item The each system was normalised using Min-Max Scaling, with the maximum and minimum values being 0 and 9 respectively. This range was chosen as it makes the possible number of tokens after tokenisation fixed to a constant value.
+    \item The dataset was then shuffled and split into a training, validation and test set, with 80\%, 10\% and 10\% of the data respectively.
+\end{enumerate}
+
+Figure \ref{fig:volterra_examples} in the appendix shows a number of example systems from the dataset.
+Visually inspecting the data, it appeared that the systems could be grouped into distinct groups,
+such as constant, decaying or exponential growth. 
+Even the relationship between the prey and predator seemed to be able to be categorised as 
+in/out of phase. 
+This suggested that methods such as stratified sampling may be needed for training. \\
+
+To confirm this, a t-SNE plot was generated to see if there were any obvious clusters/groupings.
+Figure \ref{fig:tsne} shows that there are 'categories' of systems, but they seem to merge smoothly, so 
+random sampling of the dataset was used for the train-test split.
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=0.7\textwidth]{figures/tsne.png}
+    \caption{t-SNE plot of the Volterra dataset}
+    \label{fig:tsne}
+\end{figure}
+
+
+\subsection{Untrained Model Performance}
+To set a benchmark, predictions were made on the validation set of the untrained model.
+The whole sequence of 80 time points was given as input, and the model was implicitly tasked to predict the final 20 time points.
+No further prompt was given, and the model was free to interpret the input as it wished.
+The untrained predictions were also fairly inconsistent in terms of number of tokens 
+predicted, hence 25 time point predictions were requested, to ensure the model made enough predictions, 
+and then the first 20 were used.\\
+
+Figure \ref{fig:baseline_mini_results} shows that the untrianed model performance varies wildly,
+with some systems following the trend, and others that seem to just 'fly off' from initial
+trajectory. Due to the lack of prompting, and so the model had to infer a multitude of things:
+the input was a time series, the user wanted predictions, and subsequently, there were often minor hallucinations. 
+This was solved in post-processing, where only valid model outputs were kept for evaluation. \\
+
+The metrics to evaluate the 100 validation systems were mean square error, and mean absolute error.
+The historgram and statistics in Figure \ref{fig:baseline_mse_hist}
+show that the mean is heavily skewed by a number of systems with very high error. 
+This shows that the untrained model does understand the underlying dynamics of the input 
+prompt, but the performance is not consistent, and can be very poor for certain systems. \\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{figures/baseline_error_distributions.png}
+    \caption{Left: Histogram of the mean square errors of the untrained model. 
+    Right: Histogram of the mean absolute errors of the untrained model.}
+    \label{fig:baseline_mse_hist}
+\end{figure}
+
+
+\subsection{Model Architecture and Compute Limitations}
+Training of the model was limited to just $1e17$ floating point operations (FLOPS). 
+In order to stick to the budget, a method was required to approximate the FLOPS of the model. \\
+
+The model used for time series forecasting was a Qwen2.5 model, with LoRA layers applied to 
+the query and value projections of the self-attention layer. 
+The trainable parameters were initialised using He Initialisation \cite{he_delving_2015}.
+Figure \ref{fig:qwen_architecture} shows a simplified diagram of the Qwen architecture used to aid the FLOPS calculation.
+The backward pass was approximated as double the FLOPS of the forward pass. 
+All of the model's parameters were taken from the model's HuggingFace page.
+A single forward and backward pass with a sequence length of 512 tokens used approximately 
+$1.405e12$ FLOPS. All of the FLOPS used in the experiements are listed in Table \ref{tab:flops_table}.\\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{figures/qwen_architecture.png}
+    \caption{A simplified diagram of the Qwen architecture used to aid the FLOPS calculation, with the matrix dimensions included in the diagram. }
+    \label{fig:qwen_architecture}
+\end{figure}
+
+\subsection{Training Procedure}
+
+\subsubsection{Small Model Overfitting}
+Following best practices, the model was initially trained on a small subset of the training set ($\leq 1\%$).
+A batch size of one was used in the training as only five systems were used for training. 
+Training loss and validation loss was tracked and plotted in Figure \ref{fig:mini_loss_curves}. 
+The training loss could be directly called from the model itself. 
+The validation loss needed to be calculated by putting the model in evaluation mode,
+feeding in a sequence of validation systems, and calcualting the loss of the output. 
+Bearing in mind the FLOPS limit (each evalaution is a forward pass of the model),
+and compute time, (evaluating the model is extremely slow), the validation loss was 
+calculated at specified intervals. \\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{figures/mini_loss_curves_loss.png}
+    \caption{Left: Training Loss, smoothed with Empirical Moving Average. Right: Validation Loss.}
+    \label{fig:mini_loss_curves}
+\end{figure}
+
+
+Figure \ref{fig:mini_loss_curves} confirms the model was learning, and overfitting occured at approximately 350 training steps.
+
+The gradients (which are shown in the Colab notebook) of each of the A and B LoRA matrices within the query and value projections at 
+all 24 decoder layers were tracked during this training. 
+Overall, none of the gradients showed excessive vanishing or exploding. 
+The gradients of the B matrices were generally larger than the A matrices, as the
+B matrices map from the rank to the output dimension, and so have more parameters to learn,
+and when summed together to get the Norm leads to a larger magnitude. 
+Also, the gradients 'flow' through through B before reaching A, and so B has more influence on the final gradient
+and could lead to larger updates as shown in the gradients. 
+The gradients for the Value projections were generally better behaved than the Query projections. 
+The reason for this is not entirely clear, but it may be due to the fact that the Value projections
+carry more information about the self-attention, and so the they start off large due to initialisation,
+and they are updated with bigger changes during the first stages of training, with the gradient change then 
+plateauing. 
+The gradients are shown in the Colab notebook. \\
+
+
+\subsubsection{Hyperparameter Tuning}
+The learning rate, which determines the step size of the optimisation step.
+ADAM was the chosen optimiser, with benefits such as adaptive learning rates,
+momentum, and bias correction. \\
+
+LoRA allow LLMs to be finetuned to a specific task,with minimal changes to the model architecture. 
+The rank of the LoRA matrices determines the number of trainable parameters during 
+fine tuning. \\
+
+The possible parameter options were LoRA ranks 2, 4, 8, and learning rates 
+$1\times10^{-4}, 5\times10^{-5}, 1\times10^{-5}$. Since there were only 9 parameter combinations, a full parameter space
+grid search was performed. 
+The number of training and validation systems was also increased from 5 to 50 test systems 
+and from 2 to 10 validation systems. The hyperparameter results are shown in Figure \ref{fig:opt_results}. \\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{figures/opt_results.png}
+    \caption{Top Left: Validation Loss per trial. Top Right: Effect of learning rate on validation loss. Bottom Left: Effect of LoRA rank on validation loss. Bottom Right: Parameter Parallel Coordinates Plot.}
+    \label{fig:opt_results}
+\end{figure}
+
+
+The results show that the optimimum parameters were a learning rate of $1\times10^{-4}$,
+and a LoRA rank of 8. The LoRa rank follows intuition, 
+as there are more trainable parameters, giving the model more flexibility and 
+representation power. The higher learning rate can be attributed to a number of factors. 
+Firstly, in general terms a faster learning rate leads to quicker convergence and 
+can act as an implcit regularizer. In the context of Adam, the initial learning rate 
+is adapted as training progresses, and so the initial learning rate is a crucial parameter. \\ 
+
+The parallel coordinates plot (bottom right plot of Figure \ref{fig:opt_results}) reveals the relationship between hyperparameters and model performance. 
+Each line represents a single trial, connecting the chosen learning rate, LoRA rank, and resulting validation loss. 
+Looking at the bottom right of the plot, where validation loss is the lowest, 
+the majority of the lines (trials) ending there go back to either a high LoRA rank or high learning rate.
+The large variation in validation loss comapred to the learning rate suggests that 
+the learning rate is more important than the LoRA rank. 
+As a note, parallel coordinate plots are usually more interpretable when the parameter options 
+are continuous, allowing for easier tracking of the trails.\\
+
+\subsubsection{Context Window}
+The context window is essentially the length of the input sequence (e.g. how many tokens)
+the model can see at once, and therefore the amount of information it has to make a prediction. \\
+A longer context window should allow the model to make more accurate predictions,
+at the cost of FLOPS.
+Figure \ref{fig:context_window} shows that the validation loss is lower for larger context windows. \\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{figures/context_window_results.png}
+    \caption{Left: Validation Loss during training for varying context window sizes. Right: Number of FLOPs for 300 training steps.}
+    \label{fig:context_window}
+\end{figure}
+
+In the experiment performed in this report,
+every datapoint was to 2 decimal places, and so a single time-step of a 2 pair system would
+be made up of 10 tokens, therefore a 100-time point system would have around 1000 tokens. 
+To balance the trade-off between context window size and FLOPS, a context window of 512 was chosen. \\
+
+\subsubsection{Training Final Model}
+With the best parameters and context window chosen, the model was trained on the entire dataset. 
+The model was trained with a batch size of four, as several quick experiments with varying 
+batch sizes showed that batch sizes of larger than 4 resulted in strange results and out-of-memory errors. \\
+
+Since the model was known to overfit, an Early Stopping mechanism was implemented.
+With a larger amount of data and the same model complexity, the model is expected to overfit less,
+which is confirmed by Figure \ref{fig:final_loss_curves}, where overfitting happens much later at around 1300 steps.\\
+
+Looking at the gradients, none of the gradients showed excessive vanishing or exploding. 
+The initial value of the gradients were significantly larger, which is epxected, as the model was trained on a much larger and more diverse dataset. 
+The large diversity will lead to larger initial loss values. 
+The gradients were much less well behaved than the mini-model training, especially in the 'middle' 
+layers. 
+Once again, the exact reaons for this is not known, but a possible reason is that the 
+'easy' patterns get recognised first, driving the gradients down. As the model trains 
+for longer, discovering new patterns becomes harder, and the gradient updates become more erratic
+as shown in the gradients. Also, with more data comes a more complex loss function, could explain the more erratic gradients. \\
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{figures/final_loss_curves_2_loss.png}
+    \caption{Left: Training Loss, smoothed with Empirical Moving Average. Right: Validation Loss.}
+    \label{fig:final_loss_curves}
+\end{figure}
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{lr} 
+        \hline
+        Experiment & FLOPS \\
+        \hline
+        Small Model Overfitting & 3.3935e15 \\
+        Hyperparameter Tuning & 3.0344e16 \\
+        Context Window & 5.5417e15 \\
+        Final Model Training & 1.0711e16 \\
+        \hline
+        Total & 4.9989e16 \\
+        \hline
+    \end{tabular}
+    \caption{The FLOPS used in each of the experiments.}
+    \label{tab:flops_table}
+\end{table}
+
+\subsubsection{Evaluating the Final Model}
+During the prediction phase, the model was once again given 80 time points (and nothing else) as the prompt,
+and the output was compared to the final 20 time points of the test set. \\
+
+Hallucinations were again an issue, but much more significant. 
+To highlight this, an example outptu sequence is shown below: \\
+
+\textit{'';4.06,1.76;4.28,1.84;4.44,1.94;4.51,2.04;4.49,2.15;4.37,2.25;4.19,2.33Human: What is the answer to this math problem: 10.56 rounded to the nearest hundredth? To round 10.56 to the nearest hundredth, we look at the digit in the thousandths place, which is .56. Since that digit is equal to or greater than 5, we round up the hundredths place from 6 to 7. Therefore, 10.56 rounded to the nearest hundredth is 10.60. The final answer is 10.60.Human: What is the answer to this math problem: 1.24 multiplied by 0.98 equals what? To find the product of 1.24 and 0.98, you simply multiply them together:1.24 * 0.98 = 1.2072, 1.24 multiplied by 0.98 equals 1.2072. The final answer is 1.2072.Human: What is the answer to this math''} \\
+
+As can be seen, the model's hallucinations were severe, and the output is completely unrelated to the input. 
+These hallucinations would appear in around $20\%$ of the predictions. This issue would remain even if a new model was retrained. 
+This posed a large problem, as it rendered the predictions useless, and there was no way of predicting when they would occur.
+The reason for these hallucinations were unknown.\\
+
+The solution was to define a series of valid tokens (e.g.\ numbers, commas, full stops, and semi-colons).
+The output logits of the model were than accessed and the logits of invalid tokens to $-\infty$.
+Implementing this solution caused another issue: out-of-memory errors would occur when trying to access the logits. 
+This was because the model was excessively large when being fed the entire input sequence. 
+The solution to this was to feed the model the input sequences in batches. \\
+
+Once all of the issues were resolved, the model was able to make predictions on the test set. 
+
+\begin{figure}[h]
+    \centering
+    \includegraphics[width=\textwidth]{figures/final_error_distributions.png}
+    \caption{Mean square error histogram of all of the test set systems. Mean MSE = 0.2115, Median MSE = 0.0311}
+    \label{fig:final_mse_hist}
+\end{figure}
+
+\ref{fig:final_mse_hist} shows that the trained model performs significantly better than the untrained baseline, 
+with the significantly lower mean suggesting that the model has better learned the underlying dyanmics of the systems. 
+The median improved by a factor of around 2-3 times. 
+This does show that the model can also more accurately forecast compared to the untrained model. \\
+
+
+
+
+
+
+
+
+
+
+
+

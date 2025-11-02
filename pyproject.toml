@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "qwen_lora"
+version = "0.1.0"
+description = "LoRA fine-tuning for Qwen models"
+authors = [{ name = "Your Name" }]
+dependencies = [
+    "torch",
+    "transformers",
+    "accelerate",
+    "pandas",
+    "matplotlib",
+    "tqdm",
+    "h5py",
+    "scikit-learn"
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["qwen_lora*"]
+exclude = ["data*", "demo*", "report*"]

@@ -1,0 +1,32 @@
+Time series forecasting is a critical task in many fields, including finance, healthcare, and climate science. 
+Traditional methods often rely on statistical models, but recent advancements in machine learning have 
+introduced new possibilities. 
+Large Language Models (LLMs), known for their success in natural language processing, 
+are now being explored for time series forecasting.
+
+\subsection{Why LLMs for Time Series?}
+The inherent architecture of the Transformer network that underpins LLMs make them a natural fit 
+for time series forecasting. The self attention mechanism allows LLMs to identify sequential 
+relationships, which occur in both times series data and natural language (for which we know LLMs 
+exceed at). Their ability to handle long-range dependencies and their ability to generalise to 
+new patterns makes them a natural fit for time series forecasting. LLMs also handle missing data 
+and can express multimodel distributions, which is a desirable property for time series forecasting. \\
+
+\subsection{Qwen-0.5B-Instruct}
+The LLM model used in this report is Qwen2.5 0.5B Instruct model. It is the smallest of the open-source Qwen models.
+Qwen2.5 is based off the original Transformer \cite{vaswani_attention_2023} architecture, 
+but includes a Grouped-Query Attention mechanism \cite{qwen_qwen25_2025}. 
+The model also uses RMSNorm \cite{zhang_root_2019} instead of LayerNorm \cite{vaswani_attention_2023}. 
+The model implements Rotational Position Embedding \cite{su_roformer_2023}, which gives better 
+relative positional information, and generalises better to varyting length sequences. 
+The model uses SiLU activation function \cite{elfwing_sigmoid-weighted_2017} instead of ReLU \cite{agarap_deep_2019}.
+
+\subsection{Low Rank Adaptation (LoRA)}
+LoRA \cite{hu_lora_2021} is a method for parameter efficient fine-tuning of LLMs. 
+It freezes the weights of the LLM, and injects trainable rank-decomposition matrices. 
+This reduces the number of traininable parameters required to fine-tune the model, 
+but the ranks give the user flexibility to control the trade-off between parameter efficiency and model performance.
+
+
+
+
